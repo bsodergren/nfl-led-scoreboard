@@ -19,6 +19,7 @@
 #include <stdlib.h>
 
 #include "hardware-mapping.h"
+#include "../include/graphics.h"
 
 namespace rgb_matrix {
 class GPIO;
@@ -29,17 +30,17 @@ class RowAddressSetter;
 // An opaque type used within the framebuffer that can be used
 // to copy between PixelMappers.
 struct PixelDesignator {
-  PixelDesignator() : gpio_word(-1), r_bit(0), g_bit(0), b_bit(0), mask(~0){}
-  int gpio_word;
-  uint32_t r_bit;
-  uint32_t g_bit;
-  uint32_t b_bit;
-  uint32_t mask;
+  PixelDesignator() : gpio_word(-1), r_bit(0), g_bit(0), b_bit(0), mask(~0u){}
+  long gpio_word;
+  gpio_bits_t r_bit;
+  gpio_bits_t g_bit;
+  gpio_bits_t b_bit;
+  gpio_bits_t mask;
 };
 
 class PixelDesignatorMap {
 public:
-  PixelDesignatorMap(int width, int height);
+  PixelDesignatorMap(int width, int height, const PixelDesignator &fill_bits);
   ~PixelDesignatorMap();
 
   // Get a writable version of the PixelDesignator. Outside Framebuffer used
@@ -49,9 +50,13 @@ public:
   inline int width() const { return width_; }
   inline int height() const { return height_; }
 
+  // All bits that set red/green/blue pixels; used for Fill().
+  const PixelDesignator &GetFillColorBits() { return fill_bits_; }
+
 private:
   const int width_;
   const int height_;
+  const PixelDesignator fill_bits_;  // Precalculated for fill.
   PixelDesignator *const buffer_;
 };
 
@@ -61,6 +66,24 @@ private:
 // written out.
 class Framebuffer {
 public:
+  // Maximum usable bitplanes.
+  //
+  // 11 bits seems to be a sweet spot in which we still get somewhat useful
+  // refresh rate and have good color richness. This is the default setting
+  // However, in low-light situations, we want to be able to scale down
+  // brightness more, having more bits at the bottom.
+  // TODO(hzeller): make the default 15 bit or so, but slide the use of
+  //  timing to lower bits if fewer bits requested to not affect the overall
+  //  refresh in that case.
+  //  This needs to be balanced to not create too agressive timing however.
+  //  To be explored in a separete commit.
+  //
+  // For now, if someone needs very low level of light, change this to
+  // say 13 and recompile. Run with --led-pwm-bits=13. Also, consider
+  // --led-pwm-dither-bits=2 to have the refresh rate not suffer too much.
+  static constexpr int kBitPlanes = 11;
+  static constexpr int kDefaultBitPlanes = 11;
+
   Framebuffer(int rows, int columns, int parallel,
               int scan_mode,
               const char* led_sequence, bool inverse_color,
@@ -74,6 +97,7 @@ public:
                        int pwm_lsb_nanoseconds,
                        int dither_bits,
                        int row_address_type);
+  static void InitializePanels(GPIO *io, const char *panel_type, int columns);
 
   // Set PWM bits used for output. Default is 11, but if you only deal with
   // simple comic-colors, 1 might be sufficient. Lower require less CPU.
@@ -103,6 +127,7 @@ public:
   int width() const;
   int height() const;
   void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
+  void SetPixels(int x, int y, int width, int height, Color *colors);
   void Clear();
   void Fill(uint8_t red, uint8_t green, uint8_t blue);
 
@@ -111,13 +136,14 @@ private:
   static RowAddressSetter *row_setter_;
 
   // This returns the gpio-bit for given color (one of 'R', 'G', 'B'). This is
-  // returning the right value in case led_sequence_ is _not_ "RGB"
-  gpio_bits_t GetGpioFromLedSequence(char col,
-                                     gpio_bits_t default_r,
-                                     gpio_bits_t default_g,
-                                     gpio_bits_t default_b);
+  // returning the right value in case "led_sequence" is _not_ "RGB"
+  static gpio_bits_t GetGpioFromLedSequence(char col, const char *led_sequence,
+                                            gpio_bits_t default_r,
+                                            gpio_bits_t default_g,
+                                            gpio_bits_t default_b);
 
-  void InitDefaultDesignator(int x, int y, PixelDesignator *designator);
+  void InitDefaultDesignator(int x, int y, const char *led_sequence,
+                             PixelDesignator *designator);
   inline void  MapColors(uint8_t r, uint8_t g, uint8_t b,
                          uint16_t *red, uint16_t *green, uint16_t *blue);
   const int rows_;     // Number of rows. 16 or 32.
@@ -126,7 +152,6 @@ private:
   const int columns_;  // Number of columns. Number of chained boards * 32.
 
   const int scan_mode_;
-  const char *const led_sequence_;  // Some LEDs are mapped differently.
   const bool inverse_color_;
 
   uint8_t pwm_bits_;   // PWM bits to display.

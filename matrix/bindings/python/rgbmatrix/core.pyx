@@ -106,7 +106,7 @@ cdef class RGBMatrixOptions:
 
     property cols:
         def __get__(self): return self.__options.cols
-        def __set__(self, uint8_t value): self.__options.cols = value
+        def __set__(self, uint32_t value): self.__options.cols = value
 
     property chain_length:
         def __get__(self): return self.__options.chain_length
@@ -164,6 +164,21 @@ cdef class RGBMatrixOptions:
             self.__py_encoded_pixel_mapper_config = value.encode('utf-8')
             self.__options.pixel_mapper_config = self.__py_encoded_pixel_mapper_config
 
+    property panel_type:
+        def __get__(self): return self.__options.panel_type
+        def __set__(self, value):
+            self.__py_encoded_panel_type = value.encode('utf-8')
+            self.__options.panel_type = self.__py_encoded_panel_type
+
+    property pwm_dither_bits:
+        def __get__(self): return self.__options.pwm_dither_bits
+        def __set__(self, uint8_t value): self.__options.pwm_dither_bits = value
+
+    property limit_refresh_rate_hz:
+        def __get__(self): return self.__options.limit_refresh_rate_hz
+        def __set__(self, value): self.__options.limit_refresh_rate_hz = value
+
+
     # RuntimeOptions properties
 
     property gpio_slowdown:
@@ -177,7 +192,6 @@ cdef class RGBMatrixOptions:
     property drop_privileges:
         def __get__(self): return self.__runtime_options.drop_privileges
         def __set__(self, uint8_t value): self.__runtime_options.drop_privileges = value
-
 
 cdef class RGBMatrix(Canvas):
     def __cinit__(self, int rows = 0, int chains = 0, int parallel = 0,
@@ -219,8 +233,16 @@ cdef class RGBMatrix(Canvas):
     def CreateFrameCanvas(self):
         return __createFrameCanvas(self.__matrix.CreateFrameCanvas())
 
-    def SwapOnVSync(self, FrameCanvas newFrame):
-        return __createFrameCanvas(self.__matrix.SwapOnVSync(newFrame.__canvas))
+    # The optional "framerate_fraction" parameter allows to choose which
+    # multiple of the global frame-count to use. So it slows down your animation
+    # to an exact integer fraction of the refresh rate.
+    # Default is 1, so immediately next available frame.
+    # (Say you have 140Hz refresh rate, then a value of 5 would give you an
+    # 28Hz animation, nicely locked to the refresh-rate).
+    # If you combine this with RGBMatrixOptions.limit_refresh_rate_hz you can create
+    # time-correct animations.
+    def SwapOnVSync(self, FrameCanvas newFrame, uint8_t framerate_fraction = 1):
+        return __createFrameCanvas(self.__matrix.SwapOnVSync(newFrame.__canvas, framerate_fraction))
 
     property luminanceCorrect:
         def __get__(self): return self.__matrix.luminance_correct()

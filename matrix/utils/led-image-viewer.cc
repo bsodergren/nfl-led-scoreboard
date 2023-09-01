@@ -42,7 +42,6 @@
 #include <Magick++.h>
 #include <magick/image.h>
 
-using rgb_matrix::GPIO;
 using rgb_matrix::Canvas;
 using rgb_matrix::FrameCanvas;
 using rgb_matrix::RGBMatrix;
@@ -53,11 +52,12 @@ static const tmillis_t distant_future = (1LL<<40); // that is a while.
 
 struct ImageParams {
   ImageParams() : anim_duration_ms(distant_future), wait_ms(1500),
-                  anim_delay_ms(-1), loops(-1) {}
+                  anim_delay_ms(-1), loops(-1), vsync_multiple(1) {}
   tmillis_t anim_duration_ms;  // If this is an animation, duration to show.
   tmillis_t wait_ms;           // Regular image: duration to show.
   tmillis_t anim_delay_ms;     // Animation delay override.
   int loops;
+  int vsync_multiple;
 };
 
 struct FileInfo {
@@ -95,7 +95,7 @@ static void StoreInStream(const Magick::Image &img, int delay_time_us,
   for (size_t y = 0; y < img.rows(); ++y) {
     for (size_t x = 0; x < img.columns(); ++x) {
       const Magick::Color &c = img.pixelColor(x, y);
-      if (c.alphaQuantum() < 256) {
+      if (c.alphaQuantum() < 255) {
         scratch->SetPixel(x + x_offset, y + y_offset,
                           ScaleQuantumToChar(c.redQuantum()),
                           ScaleQuantumToChar(c.greenQuantum()),
@@ -174,8 +174,7 @@ static bool LoadImageAndScale(const char *filename,
 }
 
 void DisplayAnimation(const FileInfo *file,
-                      RGBMatrix *matrix, FrameCanvas *offscreen_canvas,
-                      int vsync_multiple) {
+                      RGBMatrix *matrix, FrameCanvas *offscreen_canvas) {
   const tmillis_t duration_ms = (file->is_multi_frame
                                  ? file->params.anim_duration_ms
                                  : file->params.wait_ms);
@@ -194,7 +193,8 @@ void DisplayAnimation(const FileInfo *file,
       const tmillis_t anim_delay_ms =
         override_anim_delay >= 0 ? override_anim_delay : delay_us / 1000;
       const tmillis_t start_wait_ms = GetTimeInMillis();
-      offscreen_canvas = matrix->SwapOnVSync(offscreen_canvas, vsync_multiple);
+      offscreen_canvas = matrix->SwapOnVSync(offscreen_canvas,
+                                             file->params.vsync_multiple);
       const tmillis_t time_already_spent = GetTimeInMillis() - start_wait_ms;
       SleepMillis(anim_delay_ms - time_already_spent);
     }
@@ -210,7 +210,8 @@ static int usage(const char *progname) {
           "\t-O<streamfile>            : Output to stream-file instead of matrix (Don't need to be root).\n"
           "\t-C                        : Center images.\n"
 
-          "\nThese options affect images following them on the command line:\n"
+          "\nThese options affect images FOLLOWING them on the command line,\n"
+          "so it is possible to have different options for each image\n"
           "\t-w<seconds>               : Regular image: "
           "Wait time in seconds before next image is shown (default: 1.5).\n"
           "\t-t<seconds>               : "
@@ -220,13 +221,13 @@ static int usage(const char *progname) {
           "\t-D<animation-delay-ms>    : "
           "For animations: override the delay between frames given in the\n"
           "\t                            gif/stream animation with this value. Use -1 to use default value.\n"
+          "\t-V<vsync-multiple>        : For animation (expert): Only do frame vsync-swaps on multiples of refresh (default: 1)\n"
+          "\t                            (Tip: use --led-limit-refresh for stable rate)\n"
 
           "\nOptions affecting display of multiple images:\n"
           "\t-f                        : "
           "Forever cycle through the list of files on the command line.\n"
           "\t-s                        : If multiple images are given: shuffle.\n"
-          "\nDisplay Options:\n"
-          "\t-V<vsync-multiple>        : Expert: Only do frame vsync-swaps on multiples of refresh (default: 1)\n"
           );
 
   fprintf(stderr, "\nGeneral LED matrix options:\n");
@@ -250,12 +251,16 @@ int main(int argc, char *argv[]) {
 
   RGBMatrix::Options matrix_options;
   rgb_matrix::RuntimeOptions runtime_opt;
+  // If started with 'sudo': make sure to drop privileges to same user
+  // we started with, which is the most expected (and allows us to read
+  // files as that user).
+  runtime_opt.drop_priv_user = getenv("SUDO_UID");
+  runtime_opt.drop_priv_group = getenv("SUDO_GID");
   if (!rgb_matrix::ParseOptionsFromFlags(&argc, &argv,
                                          &matrix_options, &runtime_opt)) {
     return usage(argv[0]);
   }
 
-  int vsync_multiple = 1;
   bool do_forever = false;
   bool do_center = false;
   bool do_shuffle = false;
@@ -327,8 +332,8 @@ int main(int argc, char *argv[]) {
       stream_output = strdup(optarg);
       break;
     case 'V':
-      vsync_multiple = atoi(optarg);
-      if (vsync_multiple < 1) vsync_multiple = 1;
+      img_param.vsync_multiple = atoi(optarg);
+      if (img_param.vsync_multiple < 1) img_param.vsync_multiple = 1;
       break;
     case 'h':
     default:
@@ -350,7 +355,7 @@ int main(int argc, char *argv[]) {
 
   // Prepare matrix
   runtime_opt.do_gpio_init = (stream_output == NULL);
-  RGBMatrix *matrix = CreateMatrixFromOptions(matrix_options, runtime_opt);
+  RGBMatrix *matrix = RGBMatrix::CreateFromOptions(matrix_options, runtime_opt);
   if (matrix == NULL)
     return 1;
 
@@ -421,11 +426,14 @@ int main(int argc, char *argv[]) {
             CopyStream(&reader, global_stream_writer, offscreen_canvas);
           }
         } else {
-          err_msg = "Can't read as image or compatible stream";
+          err_msg += "; Can't read as image or compatible stream";
           delete file_info->content_stream;
           delete file_info;
           file_info = NULL;
         }
+      }
+      else {
+        perror("Opening file");
       }
     }
 
@@ -482,7 +490,7 @@ int main(int argc, char *argv[]) {
       std::random_shuffle(file_imgs.begin(), file_imgs.end());
     }
     for (size_t i = 0; i < file_imgs.size() && !interrupt_received; ++i) {
-      DisplayAnimation(file_imgs[i], matrix, offscreen_canvas, vsync_multiple);
+      DisplayAnimation(file_imgs[i], matrix, offscreen_canvas);
     }
   } while (do_forever && !interrupt_received);
 
