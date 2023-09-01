@@ -8,7 +8,7 @@ import time as t
 import debug
 import re
 import socket    
-
+import os
 
 GAMES_REFRESH_RATE = 900.0
 
@@ -25,17 +25,14 @@ class MainRenderer:
         self.draw = ImageDraw.Draw(self.image)
         # Load the fonts
         self.font = ImageFont.truetype("fonts/score_large.otf", 16)
+        self.font_ssid = ImageFont.truetype("fonts/04B_03__.TTF", 8)
         self.font_mini = ImageFont.truetype("fonts/04B_24__.TTF", 8)
 
     def render(self):
-        # date_text = 'SUNDAY SUNDAY'
-        # Center the game time on screen.                
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 1))  # connect() for UDP doesn't send packets
-        local_ip_address = s.getsockname()[0]
-        debug.info(local_ip_address)
+        ssid=os.popen("iwgetid -r").read()
+        debug.info(ssid)
 
-        self.draw.multiline_text((0, 0), local_ip_address , fill=(255, 255, 255), font=self.font, align="center")
+        self.draw.multiline_text((0, 0), ssid , fill=(255, 255, 255), font=self.font_ssid, align="center")
         self.canvas.SetImage(self.image, 0, 0)
 
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
