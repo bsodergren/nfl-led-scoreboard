@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 import time as t
 import debug
 import re
+import socket    
+
 
 GAMES_REFRESH_RATE = 900.0
 
@@ -26,6 +28,23 @@ class MainRenderer:
         self.font_mini = ImageFont.truetype("fonts/04B_24__.TTF", 8)
 
     def render(self):
+        # date_text = 'SUNDAY SUNDAY'
+        # Center the game time on screen.                
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 1))  # connect() for UDP doesn't send packets
+        local_ip_address = s.getsockname()[0]
+        debug.info(local_ip_address)
+
+        self.draw.multiline_text((0, 0), local_ip_address , fill=(255, 255, 255), font=self.font, align="center")
+        self.canvas.SetImage(self.image, 0, 0)
+
+        self.canvas = self.matrix.SwapOnVSync(self.canvas)
+        # Refresh the Data image.
+        self.image = Image.new('RGB', (self.width, self.height))
+        self.draw = ImageDraw.Draw(self.image)
+        t.sleep(3)
+        # self.canvas.Clear()
+
         while True:
             self.starttime = t.time()
             self.data.get_current_date()
@@ -362,7 +381,7 @@ class MainRenderer:
         self.canvas.Clear()
         # Go through the frames
         x = 0
-        while x is not 3:
+        while x != 3:
             try:
                 ball.seek(frameNo)
             except EOFError:
@@ -374,7 +393,7 @@ class MainRenderer:
             frameNo += 1
             t.sleep(0.05)
         x = 0
-        while x is not 3:
+        while x != 3:
             try:
                 words.seek(frameNo)
             except EOFError:
@@ -395,7 +414,7 @@ class MainRenderer:
         self.canvas.Clear()
         # Go through the frames
         x = 0
-        while x is not 3:
+        while x != 3:
             try:
                 im.seek(frameNo)
             except EOFError:
@@ -406,3 +425,15 @@ class MainRenderer:
             self.canvas = self.matrix.SwapOnVSync(self.canvas)
             frameNo += 1
             t.sleep(0.02)
+    def get_ip():
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0)
+            try:
+                # doesn't even have to be reachable
+                s.connect(('10.254.254.254', 1))
+                IP = s.getsockname()[0]
+            except Exception:
+                IP = '127.0.0.1'
+            finally:
+                s.close()
+            return IP
