@@ -1,3 +1,4 @@
 matrix/
+**/__pycache*
 scoreboard/
 .vscode/settings.json
