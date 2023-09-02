@@ -123,6 +123,19 @@ else
     sudo mkdir /etc/scoreboard -p
     sudo cp -u led.conf /etc/scoreboard/
     sudo cp -u nfl-led-scoreboard.service /lib/systemd/system/
+    sudo cp -u nfl-scoreboard.py /usr/local/bin/
+    sudo chmod +x /usr/local/bin/nfl-scoreboard.py   
+   
+    mapfile -t crontabArray < <( crontab -l)
+
+    for line in "${crontabArray[@]}"; do
+    if [[  ${line} =~ "scoreboard.py" ]]; then
+        cron_array+="@reboot /usr/local/bin/nfl-scoreboard.py \n"
+        else
+        cron_array+="$line \n"
+        fi
+    done 
+    echo -e ${cron_array[*]} | crontab -
 
     sudo systemctl daemon-reload
     sudo systemctl enable nfl-led-scoreboard.service
