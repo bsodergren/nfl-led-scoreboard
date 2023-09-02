@@ -1,6 +1,7 @@
 from utils import get_file
 import json
 import os
+import debug
 
 DEFAULT_PREFERRED_TEAMS = ["BUF", "NO"]
 DEFAULT_SCROLLING_SPEED = 2

@@ -1,6 +1,8 @@
 #import data.scoreboard_config
 import time
 import sys
+import re
+
 
 debug_enabled = False
 
@@ -9,6 +11,7 @@ def set_debug_status(config):
 	debug_enabled = config.debug
 
 def __debugprint(text):
+	text = text.strip()
 	print(text)
 	sys.stdout.flush()
 

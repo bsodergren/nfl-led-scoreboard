@@ -18,6 +18,6 @@
             "enabled": true
         }
     },
-    "scrolling_speed": 2,
+    "scrolling_speed": 5,
     "use_helmet_logos": true
 }
